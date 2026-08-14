@@ -1,0 +1,32 @@
+# Alerts worth waking someone for. Each fires on a symptom users feel or a
+# cost that compounds, never on a raw value with no consequence attached.
+groups:
+  - name: edge
+    rules:
+      - alert: HitRatioCollapse
+        # Rate over 10m, not the lifetime ratio: a counter ratio since process
+        # start barely moves during an incident and would alert far too late.
+        expr: |
+          sum(rate(cache_hits_total[10m])) by (node)
+          /
+          (sum(rate(cache_hits_total[10m])) by (node)
+           + sum(rate(cache_misses_total[10m])) by (node))
+          < 0.7
+        for: 10m
+        annotations:
+          summary: "Hit ratio below 70% on {{ $labels.node }}"
+          runbook: "Check for a deploy that changed cache keys or a TTL regression."
+
+      - alert: OriginBandwidthSpike
+        expr: sum(rate(origin_bytes_total[5m])) > 2 * sum(rate(origin_bytes_total[1h] offset 1h))
+        for: 5m
+        annotations:
+          summary: "Origin egress doubled versus the previous hour"
+          runbook: "Likely a stampede or a mass expiry. Check coalescing and TTLs."
+
+      - alert: NodeSaturated
+        expr: node_load_ratio > 0.9
+        for: 5m
+        annotations:
+          summary: "{{ $labels.node }} above 90% load for 5 minutes"
+          runbook: "Steering sheds above 0.90. Sustained means capacity is short."
